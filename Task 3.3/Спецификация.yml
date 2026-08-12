@@ -1,0 +1,193 @@
+openapi: 3.2.0
+info:
+  title: HealthPlus Mobile API
+  description: API для мобильного приложения сети клиник «Здоровье+»
+  version: 1.0.0
+  
+ tags:
+  - name: Appointments
+    description: Операции с записями на приём
+
+servers:
+  - url: https://api.healthplus.ru/api/v1
+    description: Production environment
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+paths:
+  /appointments:
+    get:
+      summary: Получить список предстоящих записей пациента
+      description: Возвращает отфильтрованный и пагинированный список записей с детализацией по визиту, врачу и статусу.
+      tags:
+        - appointments
+      operationId: getAppointments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - upcoming
+              - past
+              - cancelled
+              - all
+          description: Фильтр по статусу записи. По умолчанию — upcoming.
+          required: false
+          example: upcoming
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Количество записей на странице. По умолчанию — 20.
+          required: false
+          example: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Смещение для пагинации (количество пропущенных записей). По умолчанию — 0.
+          required: false
+          example: 0
+      responses:
+        '200':
+          description: Успешный ответ: список записей либо пустой список при отсутствии записей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentsResponse'
+          examples:
+            successWithItems:
+              summary: Записи найдены
+              value:
+                items:
+                  - id: "appointment-123"
+                    patientId: "patient-456"
+                    doctorName: "Иванов И.И."
+                    specialty: "Терапевт"
+                    clinicAddress: "Москва, ул. Ленина, 1"
+                    slotStart: "2026-09-15T10:00:00Z"
+                    slotEnd: "2026-09-15T10:30:00Z"
+                    status: "confirmed"
+                total: 1
+                limit: 20
+                offset: 0
+            successEmpty:
+              summary: Записей нет (корректный успешный ответ)
+              value:
+                items: []
+                total: 0
+                limit: 20
+                offset: 0
+        '401':
+          description: Неавторизованный запрос (отсутствует или невалиден JWT)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          examples:
+            unauthorized:
+              summary: Пример ответа 401
+              value:
+                code: "UNAUTHORIZED"
+                message: "Требуется авторизация. Проверьте заголовок Authorization"
+                details: null
+        '500':
+          description: Внутренняя ошибка сервера (сбой интеграции, БД, таймаут)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          examples:
+            internalError:
+              summary: Пример ответа 500
+              value:
+                code: "INTERNAL_ERROR"
+                message: "Не удалось получить данные записей. Попробуйте позже"
+                details: "Integration timeout with Schedule Service"
+
+components:
+  schemas:
+    Appointment:
+      type: object
+      required:
+        - id
+        - patientId
+        - doctorName
+        - slotStart
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Уникальный идентификатор записи
+        patientId:
+          type: string
+          format: uuid
+        doctorName:
+          type: string
+          description: ФИО врача
+        specialty:
+          type: string
+          description: Специальность врача
+        clinicAddress:
+          type: string
+          description: Адрес клиники
+        slotStart:
+          type: string
+          format: date-time
+          description: Начало приёма
+        slotEnd:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - confirmed
+            - pending
+            - cancelled
+            - completed
+          description: Статус записи
+        reasonCancelled:
+          type: string
+          nullable: true
+          description: Причина отмены (если применимо)
+        labReservation:
+          $ref: '#/components/schemas/LabReservation'
+          nullable: true
+          description: Резервирование лабораторного слота (если есть)
+
+    LabReservation:
+      type: object
+      properties:
+        reservationId:
+          type: string
+        type:
+          type: string
+          description: Тип исследования (например, blood)
+        slotStart:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: [string, 'null']
